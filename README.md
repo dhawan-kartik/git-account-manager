@@ -42,3 +42,5 @@ git-account switch
 ```bash
 git-account current
 ```
+
+For detailed documentation, see [DOCS.md](DOCS.md)
