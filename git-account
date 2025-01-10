@@ -1,0 +1,113 @@
+#!/bin/zsh
+
+# Configuration file path
+CONFIG_FILE="$HOME/.git-accounts"
+SSH_DIR="$HOME/.ssh"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+
+setup_initial_config() {
+    if [[ ! -f $CONFIG_FILE ]]; then
+        echo "# Git Account Configurations" > $CONFIG_FILE
+        echo "# Format: account_name:email:ssh_key_name:github_username" >> $CONFIG_FILE
+        echo "# Example: main:john@example.com:id_rsa_main:johnsmith" >> $CONFIG_FILE
+    fi
+}
+
+
+add_account() {
+    echo "${BLUE}Adding new Git account${NC}"
+    echo "Enter account name (e.g., main, work):"
+    read account_name
+    echo "Enter email for this account:"
+    read email
+    echo "Enter GitHub username:"
+    read github_username
+    
+    # Generate SSH key
+    ssh_key_name="id_rsa_${account_name}"
+    ssh-keygen -t rsa -b 4096 -C "$email" -f "$SSH_DIR/$ssh_key_name"
+    
+    # Add to SSH config
+    if [[ ! -f "$SSH_DIR/config" ]]; then
+        touch "$SSH_DIR/config"
+    fi
+    
+    echo "\nHost github.com-${account_name}" >> "$SSH_DIR/config"
+    echo "    HostName github.com" >> "$SSH_DIR/config"
+    echo "    User git" >> "$SSH_DIR/config"
+    echo "    IdentityFile ~/.ssh/${ssh_key_name}" >> "$SSH_DIR/config"
+    
+    # Add to our config file
+    echo "${account_name}:${email}:${ssh_key_name}:${github_username}" >> $CONFIG_FILE
+    
+    echo "${GREEN}Account added successfully!${NC}"
+    echo "Please add this public key to your GitHub account:"
+    cat "${SSH_DIR}/${ssh_key_name}.pub"
+}
+
+
+get_current_config() {
+    local current_email=$(git config --global user.email)
+    local current_name=$(git config --global user.name)
+    
+    echo "${BLUE}Current Git Configuration:${NC}"
+    echo "Username: $current_name"
+    echo "Email: $current_email"
+}
+
+
+switch_account() {
+    local account_name=$1
+    if [[ -z $account_name ]]; then
+        echo "${RED}Please provide an account name${NC}"
+        return 1
+    fi
+    
+    # find account from config
+    local account_line=$(grep "^${account_name}:" $CONFIG_FILE)
+    if [[ -z $account_line ]]; then
+        echo "${RED}Account '$account_name' not found${NC}"
+        return 1
+    fi
+    
+    # parse account details
+    local email=$(echo $account_line | cut -d: -f2)
+    local ssh_key=$(echo $account_line | cut -d: -f3)
+    local github_username=$(echo $account_line | cut -d: -f4)
+    
+    # Update git config
+    git config --global user.email "$email"
+    git config --global user.name "$github_username"
+    
+    # Update SSH configuration
+    git config --global core.sshCommand "ssh -i $SSH_DIR/$ssh_key"
+    
+    echo "${GREEN}Switched to account: $account_name${NC}"
+    get_current_config
+}
+
+# Main script logic
+case "$1" in
+    "add")
+        add_account
+        ;;
+    "switch")
+        switch_account $2
+        ;;
+    "current")
+        get_current_config
+        ;;
+    *)
+        echo "Usage: git-account <command> [options]"
+        echo "Commands:"
+        echo "  add     - Add a new Git account"
+        echo "  switch  - Switch to a different account (git-account switch account_name)"
+        echo "  current - Show current Git configuration"
+        ;;
+esac
